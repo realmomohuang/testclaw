@@ -11,6 +11,12 @@ const isBasicConfig =
   /[?&]functionId=basicConfig(?:&|$)/.test(requestUrl) &&
   /[?&]appid=avatar-basic-config(?:&|$)/.test(requestUrl);
 
+const looksLikeBasicConfigBody =
+  /"JDService"\s*:/.test(rawBody) ||
+  /"JDNJMyWalletModule"\s*:/.test(rawBody) ||
+  /"JDAD"\s*:/.test(rawBody) ||
+  /"JDAdsCore"\s*:/.test(rawBody);
+
 const TARGET_WORDS = [
   "钱包",
   "京东服务",
@@ -132,11 +138,11 @@ function clean(value, parentKey, depth) {
 }
 
 try {
-  if (!rawBody || (!isBasicConfig && !hasTarget(rawBody))) {
+  if (!rawBody || (!isBasicConfig && !looksLikeBasicConfigBody && !hasTarget(rawBody))) {
     $done({ body: rawBody });
   } else {
     const parsed = parseEnvelope(rawBody);
-    const cleaned = isBasicConfig ? cleanBasicConfig(parsed.value) : clean(parsed.value, "", 0);
+    const cleaned = (isBasicConfig || looksLikeBasicConfigBody) ? cleanBasicConfig(parsed.value) : clean(parsed.value, "", 0);
     const nextBody = parsed.prefix + JSON.stringify(cleaned) + parsed.suffix;
     if (removed > 0) {
       console.log(`JD redbox cleanup removed ${removed} item(s) from ${requestUrl}`);
