@@ -6,10 +6,36 @@
 
 const rawBody = typeof $response !== "undefined" && $response.body ? $response.body : "";
 const requestUrl = typeof $request !== "undefined" && $request.url ? $request.url : "";
+const requestBody = typeof $request !== "undefined" && $request.body ? $request.body : "";
+
+function decodeLoose(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch (_) {
+    return text;
+  }
+}
+
+function pickParam(text, name) {
+  const decoded = decodeLoose(text);
+  const patterns = [
+    new RegExp(`(?:^|[?&\\n])${name}=([^&\\n]+)`),
+    new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`),
+  ];
+  for (const pattern of patterns) {
+    const match = decoded.match(pattern);
+    if (match) return decodeLoose(match[1] || "");
+  }
+  return "";
+}
+
+const requestText = `${requestUrl}\n${requestBody}`;
+const functionId = pickParam(requestText, "functionId");
+const appid = pickParam(requestText, "appid");
+const isSHomeLoad = functionId === "SHome_Load";
 
 const isBasicConfig =
-  /[?&]functionId=basicConfig(?:&|$)/.test(requestUrl) &&
-  /[?&]appid=avatar-basic-config(?:&|$)/.test(requestUrl);
+  functionId === "basicConfig" && appid === "avatar-basic-config";
 
 const looksLikeBasicConfigBody =
   /"JDService"\s*:/.test(rawBody) ||
@@ -117,7 +143,8 @@ function clean(value, parentKey, depth) {
   }
 
   const shallowText = ownDisplayText(value);
-  if (depth > 1 && (hasTarget(shallowText) || DROP_KEY_HINTS.test(parentKey))) {
+  const hintMatched = isSHomeLoad && (DROP_KEY_HINTS.test(parentKey) || DROP_KEY_HINTS.test(shallowText));
+  if (depth > 1 && (hasTarget(shallowText) || hintMatched)) {
     removed += 1;
     return undefined;
   }
@@ -138,7 +165,12 @@ function clean(value, parentKey, depth) {
 }
 
 try {
-  if (!rawBody || (!isBasicConfig && !looksLikeBasicConfigBody && !hasTarget(rawBody))) {
+  if (/api\.m\.jd\.com\/client\.action/.test(requestUrl)) {
+    const hit = isBasicConfig || isSHomeLoad || looksLikeBasicConfigBody || hasTarget(rawBody);
+    console.log(`[JD cleanup] functionId=${functionId || "-"} appid=${appid || "-"} responseLen=${rawBody.length} hit=${hit ? "1" : "0"}`);
+  }
+
+  if (!rawBody || (!isBasicConfig && !isSHomeLoad && !looksLikeBasicConfigBody && !hasTarget(rawBody))) {
     $done({ body: rawBody });
   } else {
     const parsed = parseEnvelope(rawBody);
